@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Photos - Téléchargeur de Diaporamas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JSZip pour créer le fichier ZIP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
+        
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #020617;
+            overflow-x: hidden;
+            color: white;
+        }
+
+        /* Arrière-plan avec dégradé bleu spécifique #0c2fcc */
+        .bg-glow {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #0c2fcc 0%, #020617 100%);
+        }
+
+        .blob {
+            position: absolute;
+            width: 700px;
+            height: 700px;
+            background: linear-gradient(135deg, rgba(12, 47, 204, 0.4) 0%, rgba(59, 130, 246, 0.2) 100%);
+            filter: blur(120px);
+            border-radius: 50%;
+            z-index: -1;
+            animation: move 25s infinite alternate ease-in-out;
+        }
+
+        .blob-1 { 
+            top: -200px; 
+            left: -150px; 
+            animation-delay: 0s; 
+            background: rgba(12, 47, 204, 0.5);
+        }
+        
+        .blob-2 { 
+            bottom: -200px; 
+            right: -150px; 
+            animation-delay: -7s; 
+            background: rgba(12, 47, 204, 0.3);
+        }
+
+        @keyframes move {
+            from { transform: translate(0, 0) rotate(0deg) scale(1); }
+            to { transform: translate(100px, 80px) rotate(30deg) scale(1.1); }
+        }
+
+        .glass { 
+            background: rgba(15, 23, 42, 0.7); 
+            backdrop-filter: blur(20px); 
+            border: 1px solid rgba(255, 255, 255, 0.8); /* Cadre blanc prononcé */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+        }
+
+        .loader {
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top: 2px solid #ffffff;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .animate-fade-in { animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+        .logo-text {
+            letter-spacing: -0.04em;
+        }
+
+        .image-card:hover img {
+            transform: scale(1.08);
+        }
+        
+        .overlay-actions {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            background: linear-gradient(to top, rgba(2, 6, 23, 0.9), transparent);
+        }
+        
+        .image-card:hover .overlay-actions {
+            opacity: 1;
+        }
+
+        #thanksModal {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @media (max-width: 640px) {
+            .overlay-actions {
+                opacity: 1;
+                background: linear-gradient(to top, rgba(2, 6, 23, 0.8), transparent);
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-6">
+
+    <!-- Éléments d'arrière-plan bleus -->
+    <div class="bg-glow">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="w-full max-w-4xl mt-16 z-10">
+        <!-- En-tête -->
+        <div class="text-center mb-12">
+            <div class="inline-flex items-center justify-center space-x-2 mb-4 bg-white/10 px-4 py-1.5 rounded-full border border-white/30">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                </span>
+                <span id="systemStatus" class="text-xs font-bold tracking-widest uppercase text-white">Prêt pour l'analyse</span>
+            </div>
+            <h1 class="text-6xl font-extrabold mb-4 logo-text">
+                <span style="color: #cc7f0c;">Tik</span><span class="text-white">Tok Photos</span>
+            </h1>
+            <p class="text-white text-lg max-w-md mx-auto leading-relaxed opacity-90">
+                Collez un lien de diaporama pour extraire les images immédiatement.
+            </p>
+        </div>
+
+        <!-- Section de Saisie -->
+        <div class="glass p-8 rounded-[2.5rem] mb-6 transition-all hover:bg-white/5 relative">
+            <div class="relative group">
+                <div class="absolute -inset-1 bg-white rounded-2xl blur opacity-10 group-hover:opacity-20 transition duration-1000"></div>
+                <div class="relative flex items-center bg-slate-950/80 border border-white/40 rounded-2xl overflow-hidden shadow-inner">
+                    <!-- Champ de saisie -->
+                    <input id="urlInput" type="text" placeholder="Collez le lien de la publication ici..." 
+                           class="w-full bg-transparent pl-6 pr-4 py-5 outline-none text-lg text-white placeholder:text-slate-400">
+                    
+                    <!-- Bouton X dans un carré blanc -->
+                    <div id="clearContainer" class="hidden pr-4">
+                        <button id="clearBtn" class="bg-white text-black p-2 rounded-xl hover:bg-slate-200 transition-all flex items-center justify-center shadow-lg active:scale-90">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Loader à droite -->
+                    <div id="statusIndicator" class="hidden pr-6">
+                        <div class="loader"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bandeau de Statut (Indicateur d'état sous le texte) -->
+            <div id="statusBox" class="mt-6 flex items-center justify-between p-4 rounded-xl border border-white/20 bg-white/5 hidden animate-fade-in">
+                <div class="flex items-center space-x-3">
+                    <div id="statusIcon" class="h-2 w-2 rounded-full bg-white"></div>
+                    <p id="statusMsg" class="text-sm font-bold uppercase tracking-wider text-white"></p>
+                </div>
+                <div id="processingLoader" class="loader hidden"></div>
+            </div>
+        </div>
+
+        <!-- Zone de Résultats -->
+        <div id="resultContainer" class="hidden">
+            <div class="flex flex-col md:flex-row items-center justify-between mb-8 gap-4 glass p-6 rounded-[2rem]">
+                <div class="flex items-center space-x-4">
+                    <div class="h-12 w-12 bg-white/20 rounded-2xl flex items-center justify-center border border-white/30">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-black leading-none text-white"><span id="photoCount">0</span> Images</h2>
+                        <p class="text-[9px] font-bold uppercase tracking-[0.2em] mt-1 text-white opacity-70">HD Extraites</p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-row gap-2 w-full md:w-auto">
+                    <button id="downloadSeparateBtn" class="flex-1 md:flex-initial bg-white/10 backdrop-blur border border-white/30 text-white hover:bg-white/20 font-bold py-3 px-5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 active:scale-95">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Séparé
+                    </button>
+
+                    <button id="downloadAllBtn" class="flex-1 md:flex-initial bg-white text-black hover:bg-slate-200 font-black py-3 px-6 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-2xl active:scale-95 group">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Tout (.ZIP)
+                    </button>
+                </div>
+            </div>
+
+            <div id="imageGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 pb-20">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale de Remerciement -->
+    <div id="thanksModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm opacity-0 pointer-events-none">
+        <div class="glass max-w-sm w-full p-8 rounded-[2.5rem] text-center transform scale-90 transition-transform duration-300">
+            <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/30">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </div>
+            <h3 class="text-3xl font-black mb-2 tracking-tight text-white">Merci !</h3>
+            <p class="text-white/80 mb-8 leading-relaxed">Vos photos ont été traitées avec succès. À bientôt !</p>
+            <button id="closeModalBtn" class="w-full bg-white text-black hover:bg-slate-200 font-bold py-4 rounded-2xl transition-all active:scale-95">
+                Fermer
+            </button>
+        </div>
+    </div>
+
+    <!-- Pied de page -->
+    <footer class="mt-auto py-12 text-white text-[11px] text-center w-full">
+        <div class="flex items-center justify-center space-x-4 mb-3">
+            <span class="h-px w-6 bg-white/40"></span>
+            <span class="font-black tracking-[0.3em] uppercase">TikTok Photos Engine</span>
+            <span class="h-px w-6 bg-white/40"></span>
+        </div>
+        <p class="opacity-70">Usage personnel uniquement • Service gratuit</p>
+    </footer>
+
+    <script>
+        const urlInput = document.getElementById('urlInput');
+        const clearBtn = document.getElementById('clearBtn');
+        const clearContainer = document.getElementById('clearContainer');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusBox = document.getElementById('statusBox');
+        const statusMsg = document.getElementById('statusMsg');
+        const statusIcon = document.getElementById('statusIcon');
+        const processingLoader = document.getElementById('processingLoader');
+        const systemStatus = document.getElementById('systemStatus');
+        const resultContainer = document.getElementById('resultContainer');
+        const imageGrid = document.getElementById('imageGrid');
+        const photoCount = document.getElementById('photoCount');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const downloadSeparateBtn = document.getElementById('downloadSeparateBtn');
+        const thanksModal = document.getElementById('thanksModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        let currentPhotos = [];
+        let lastProcessedUrl = "";
+
+        // Gérer l'affichage du statut
+        function showStatus(text, type = "info") {
+            statusBox.classList.remove('hidden');
+            statusMsg.textContent = text;
+            
+            statusIcon.className = "h-2 w-2 rounded-full";
+            processingLoader.classList.add('hidden');
+            
+            if (type === "error") {
+                statusIcon.classList.add('bg-red-500');
+                systemStatus.textContent = "Erreur";
+            } else if (type === "success") {
+                statusIcon.classList.add('bg-green-500');
+                systemStatus.textContent = "Images trouvées";
+            } else if (type === "loading") {
+                statusIcon.classList.add('bg-blue-400', 'animate-pulse');
+                processingLoader.classList.remove('hidden');
+                systemStatus.textContent = "Traitement...";
+            } else {
+                statusIcon.classList.add('bg-white');
+                systemStatus.textContent = "Analyse...";
+            }
+        }
+
+        // Effacer le lien
+        clearBtn.addEventListener('click', () => {
+            urlInput.value = "";
+            lastProcessedUrl = "";
+            clearContainer.classList.add('hidden');
+            statusBox.classList.add('hidden');
+            resultContainer.classList.add('hidden');
+            systemStatus.textContent = "Prêt pour l'analyse";
+            urlInput.focus();
+        });
+
+        async function fetchTikTokData(url) {
+            try {
+                const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`;
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error("Connexion impossible.");
+                const data = await response.json();
+
+                if (data.code === 0 && data.data.images) {
+                    return data.data.images;
+                } else if (data.data && !data.data.images) {
+                    throw new Error("Lien vidéo détecté. Utilisez un lien photo.");
+                } else {
+                    throw new Error("Contenu introuvable ou lien privé.");
+                }
+            } catch (err) {
+                throw err;
+            }
+        }
+
+        async function downloadSingle(url, index) {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = `tiktok_photo_${index + 1}.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+            } catch (e) {
+                console.error("Erreur de téléchargement", e);
+            }
+        }
+
+        async function handleUrlProcess() {
+            const url = urlInput.value.trim();
+            
+            // Afficher/masquer bouton X
+            if (url.length > 0) clearContainer.classList.remove('hidden');
+            else clearContainer.classList.add('hidden');
+
+            if (!url || url === lastProcessedUrl) return;
+            
+            if (!url.includes('tiktok.com')) {
+                if (url.length > 10) showStatus("Lien non valide.", "error");
+                return;
+            }
+            
+            lastProcessedUrl = url;
+            statusIndicator.classList.remove('hidden');
+            resultContainer.classList.add('hidden');
+            imageGrid.innerHTML = '';
+            showStatus("Récupération en cours...", "loading");
+
+            try {
+                currentPhotos = await fetchTikTokData(url);
+                photoCount.textContent = currentPhotos.length;
+                
+                currentPhotos.forEach((imgUrl, index) => {
+                    const div = document.createElement('div');
+                    div.className = "image-card aspect-[3/4] rounded-[2rem] overflow-hidden bg-slate-900 border border-white/10 relative group animate-fade-in shadow-2xl";
+                    div.style.animationDelay = `${index * 60}ms`;
+                    
+                    div.innerHTML = `
+                        <img src="${imgUrl}" class="w-full h-full object-cover transition-transform duration-1000" alt="Photo ${index + 1}" loading="lazy">
+                        <div class="overlay-actions absolute inset-0 flex flex-col items-center justify-end p-4 pb-6">
+                            <div class="flex gap-2 w-full max-w-[140px]">
+                                <button class="download-item-btn flex-1 bg-white text-black py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all shadow-xl flex items-center justify-center">
+                                    Enregistrer
+                                </button>
+                                <a href="${imgUrl}" target="_blank" class="bg-white text-black p-2.5 rounded-xl hover:bg-slate-200 transition-all shadow-xl flex items-center justify-center">
+                                    <!-- ICÔNE D'ŒIL MODERNE -->
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                    
+                    div.querySelector('.download-item-btn').onclick = (e) => {
+                        e.preventDefault();
+                        downloadSingle(imgUrl, index);
+                    };
+
+                    imageGrid.appendChild(div);
+                });
+
+                resultContainer.classList.remove('hidden');
+                showStatus(`${currentPhotos.length} Images trouvées`, "success");
+                
+                setTimeout(() => {
+                    resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            } catch (err) {
+                showStatus(err.message, "error");
+                lastProcessedUrl = ""; 
+            } finally {
+                statusIndicator.classList.add('hidden');
+            }
+        }
+
+        function openThanksModal() {
+            thanksModal.classList.remove('opacity-0', 'pointer-events-none');
+            thanksModal.querySelector('.transform').classList.remove('scale-90');
+        }
+
+        function closeThanksModal() {
+            thanksModal.classList.add('opacity-0', 'pointer-events-none');
+            thanksModal.querySelector('.transform').classList.add('scale-90');
+        }
+
+        urlInput.addEventListener('input', () => {
+            clearTimeout(window.inputTimer);
+            window.inputTimer = setTimeout(handleUrlProcess, 600);
+        });
+
+        urlInput.addEventListener('paste', () => {
+            setTimeout(handleUrlProcess, 100);
+        });
+
+        closeModalBtn.addEventListener('click', closeThanksModal);
+
+        downloadSeparateBtn.addEventListener('click', async () => {
+            if (currentPhotos.length === 0) return;
+            downloadSeparateBtn.disabled = true;
+            for (let i = 0; i < currentPhotos.length; i++) {
+                await downloadSingle(currentPhotos[i], i);
+                await new Promise(r => setTimeout(r, 200));
+            }
+            downloadSeparateBtn.disabled = false;
+            openThanksModal();
+        });
+
+        downloadAllBtn.addEventListener('click', async () => {
+            if (currentPhotos.length === 0) return;
+            downloadAllBtn.disabled = true;
+            const zip = new JSZip();
+            const folder = zip.folder("tiktok_photos");
+
+            try {
+                const promises = currentPhotos.map(async (url, i) => {
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    folder.file(`photo_${i + 1}.jpg`, blob);
+                });
+                await Promise.all(promises);
+                const content = await zip.generateAsync({type: "blob"});
+                const zipUrl = URL.createObjectURL(content);
+                const link = document.createElement('a');
+                link.href = zipUrl;
+                link.download = `Photos_TikTok_${Date.now()}.zip`;
+                link.click();
+                URL.revokeObjectURL(zipUrl);
+                openThanksModal();
+            } catch (err) {
+                console.error("ZIP Error:", err);
+            } finally {
+                downloadAllBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
